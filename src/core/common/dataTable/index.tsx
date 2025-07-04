@@ -31,10 +31,6 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }
   useEffect(() => {
     return setSelections(Selection);
   }, [Selection])
-
-  useEffect(() => {
-    setFilteredDataSource(dataSource);
-  }, [dataSource]);
   
   
   return (

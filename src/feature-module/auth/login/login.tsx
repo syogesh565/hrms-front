@@ -41,10 +41,8 @@ const Login = () => {
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       // Redirect based on role
-      if (data.user.role === "admin") {
+      if (data.user.role === "admin" || data.user.role === "hr") {
         navigation(routes.adminDashboard);
-      } else if (data.user.role === "hr") {
-        navigation("/hr-dashboard");
       } else if (data.user.role === "employee") {
         navigation("/employee-dashboard");
       } else {
