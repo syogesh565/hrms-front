@@ -4,7 +4,7 @@ import { Table } from "antd";
 import { DatatableProps } from "../../data/interface";
 
 
-const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }) => {
+const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection, rowKey }) => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<any[]>([]);
   const [searchText, setSearchText] = useState<string>("");
   const [Selections, setSelections] = useState<any>(true);
@@ -31,6 +31,10 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }
   useEffect(() => {
     return setSelections(Selection);
   }, [Selection])
+
+  useEffect(() => {
+    setFilteredDataSource(dataSource);
+  }, [dataSource]);
   
   
   return (
@@ -62,10 +66,10 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }
      {!Selections ?
       <Table
       className="table datanew dataTable no-footer"
-     
       columns={columns}
       rowHoverable={false}
       dataSource={filteredDataSource}
+        rowKey={rowKey}
       pagination={{
         locale: { items_per_page: "" },
         nextIcon: <i className="ti ti-chevron-right"/>,
@@ -81,7 +85,7 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }
         columns={columns}
         rowHoverable={false}
         dataSource={filteredDataSource}
-        
+        rowKey={rowKey}
         pagination={{
           locale: { items_per_page: "" },
           nextIcon: <i className="ti ti-chevron-right"/>,

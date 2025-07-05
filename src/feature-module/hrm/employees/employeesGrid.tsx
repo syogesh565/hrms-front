@@ -5,9 +5,38 @@ import ImageWithBasePath from '../../../core/common/imageWithBasePath';
 import CommonSelect from '../../../core/common/commonSelect';
 import { DatePicker } from 'antd';
 import CollapseHeader from '../../../core/common/collapse-header/collapse-header';
+import axios from 'axios';
 type PasswordField = "password" | "confirmPassword";
 
+declare const process: { env: { [key: string]: string | undefined } };
+
 const EmployeesGrid = () => {
+  const [dashboardStats, setDashboardStats] = useState({
+    totalEmployees: 0,
+    activeEmployees: 0,
+    inactiveEmployees: 0,
+    newJoiners: 0,
+    totalChange: '+19.01%',
+    activeChange: '+19.01%',
+    inactiveChange: '+19.01%',
+    newJoinersChange: '+19.01%'
+  });
+
+  React.useEffect(() => {
+    // Fetch dashboard statistics
+    axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/employees/stats/dashboard`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+      .then(res => {
+        setDashboardStats(res.data);
+        console.log('Dashboard stats:', res.data); // Debug
+      })
+      .catch(err => {
+        console.error('Error fetching dashboard stats:', err);
+      });
+  }, []);
 
     const department = [
         { value: "Select", label: "Select" },
@@ -140,13 +169,13 @@ const EmployeesGrid = () => {
                                             <p className="fs-12 fw-medium mb-1 text-truncate">
                                                 Total Employee
                                             </p>
-                                            <h4>1007</h4>
+                                            <h4>{dashboardStats.totalEmployees}</h4>
                                         </div>
                                     </div>
                                     <div>
                                         <span className="badge badge-soft-purple badge-sm fw-normal">
                                             <i className="ti ti-arrow-wave-right-down" />
-                                            +19.01%
+                                            {dashboardStats.totalChange}
                                         </span>
                                     </div>
                                 </div>
@@ -165,13 +194,13 @@ const EmployeesGrid = () => {
                                         </div>
                                         <div className="ms-2 overflow-hidden">
                                             <p className="fs-12 fw-medium mb-1 text-truncate">Active</p>
-                                            <h4>1007</h4>
+                                            <h4>{dashboardStats.activeEmployees}</h4>
                                         </div>
                                     </div>
                                     <div>
                                         <span className="badge badge-soft-primary badge-sm fw-normal">
                                             <i className="ti ti-arrow-wave-right-down" />
-                                            +19.01%
+                                            {dashboardStats.activeChange}
                                         </span>
                                     </div>
                                 </div>
@@ -190,13 +219,13 @@ const EmployeesGrid = () => {
                                         </div>
                                         <div className="ms-2 overflow-hidden">
                                             <p className="fs-12 fw-medium mb-1 text-truncate">InActive</p>
-                                            <h4>1007</h4>
+                                            <h4>{dashboardStats.inactiveEmployees}</h4>
                                         </div>
                                     </div>
                                     <div>
                                         <span className="badge badge-soft-dark badge-sm fw-normal">
                                             <i className="ti ti-arrow-wave-right-down" />
-                                            +19.01%
+                                            {dashboardStats.inactiveChange}
                                         </span>
                                     </div>
                                 </div>
@@ -217,13 +246,13 @@ const EmployeesGrid = () => {
                                             <p className="fs-12 fw-medium mb-1 text-truncate">
                                                 New Joiners
                                             </p>
-                                            <h4>67</h4>
+                                            <h4>{dashboardStats.newJoiners}</h4>
                                         </div>
                                     </div>
                                     <div>
                                         <span className="badge badge-soft-secondary badge-sm fw-normal">
                                             <i className="ti ti-arrow-wave-right-down" />
-                                            +19.01%
+                                            {dashboardStats.newJoinersChange}
                                         </span>
                                     </div>
                                 </div>

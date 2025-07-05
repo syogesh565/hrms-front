@@ -4,15 +4,93 @@ import { Link } from 'react-router-dom'
 import Table from "../../../core/common/dataTable/index";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import PredefinedDateRanges from '../../../core/common/datePicker';
-import { employee_list_details } from '../../../core/data/json/employees_list_details';
+// import { employee_list_details } from '../../../core/data/json/employees_list_details';
 import { DatePicker } from 'antd';
 import CommonSelect from '../../../core/common/commonSelect';
 import CollapseHeader from '../../../core/common/collapse-header/collapse-header';
+import axios from 'axios';
 type PasswordField = "password" | "confirmPassword";
+
+declare const process: { env: { [key: string]: string | undefined } };
+
+// Define the mapped employee type
+interface EmployeeTableRow {
+  key: string;
+  EmpId: string;
+  Name: string;
+  Email: string;
+  Phone: string;
+  Designation: string;
+  JoiningDate: string;
+  Status: string;
+  Image: string;
+  CurrentRole: string;
+}
 
 const EmployeeList = () => {
 
-  const data = employee_list_details;
+  // const data = employee_list_details;
+  // Instead, fetch from backend:
+  const [data, setData] = useState<EmployeeTableRow[]>([]);
+  const [dashboardStats, setDashboardStats] = useState({
+    totalEmployees: 0,
+    activeEmployees: 0,
+    inactiveEmployees: 0,
+    newJoiners: 0,
+    totalChange: '+19.01%',
+    activeChange: '+19.01%',
+    inactiveChange: '+19.01%',
+    newJoinersChange: '+19.01%'
+  });
+
+  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+
+  // Reusable mapping function
+  const mapEmployeeData = (employees: any[]) => employees.map((emp: any) => ({
+    key: emp._id,
+    EmpId: emp.employeeId,
+    Name: emp.firstName + ' ' + emp.lastName,
+    Email: emp.email,
+    Phone: emp.phoneNumber,
+    Designation: emp.designation,
+    JoiningDate: emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString() : '',
+    Status: emp.status || 'Active',
+    Image: emp.profileImage ? `${BACKEND_URL}/uploads/${emp.profileImage}` : 'assets/img/users/user-1.jpg',
+    CurrentRole: emp.designation || '',
+  }));
+
+  React.useEffect(() => {
+    // Fetch employee data from backend
+    axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/employees`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+      .then(res => {
+        console.log('Raw employee data from backend:', res.data);
+        const mapped = mapEmployeeData(res.data);
+        console.log('Mapped employee data for table:', mapped);
+        setData(mapped);
+      })
+      .catch(err => {
+        // Optionally handle error
+        setData([]);
+      });
+
+    // Fetch dashboard statistics
+    axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/employees/stats/dashboard`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+      .then(res => {
+        setDashboardStats(res.data);
+        console.log('Dashboard stats:', res.data); // Debug
+      })
+      .catch(err => {
+        console.error('Error fetching dashboard stats:', err);
+      });
+  }, []);
   const columns = [
     {
       title: "Emp ID",
@@ -33,10 +111,11 @@ const EmployeeList = () => {
             data-bs-toggle="modal" data-inert={true}
             data-bs-target="#view_details"
           >
-            <ImageWithBasePath
-              src={`assets/img/users/${record.Image}`}
+            <img 
+              src={record.Image} 
+              alt="img" 
               className="img-fluid rounded-circle"
-              alt="img"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
           </Link>
           <div className="ms-2">
@@ -113,7 +192,7 @@ const EmployeeList = () => {
     {
       title: "",
       dataIndex: "actions",
-      render: () => (
+      render: (_: any, record: any) => (
         <div className="action-icon d-inline-flex">
           <Link
             to="#"
@@ -123,7 +202,13 @@ const EmployeeList = () => {
           >
             <i className="ti ti-edit" />
           </Link>
-          <Link to="#" data-bs-toggle="modal" data-inert={true} data-bs-target="#delete_modal">
+          <Link
+            to="#"
+            data-bs-toggle="modal"
+            data-inert={true}
+            data-bs-target="#delete_modal"
+            onClick={() => setSelectedEmployee(record)}
+          >
             <i className="ti ti-trash" />
           </Link>
         </div>
@@ -160,6 +245,212 @@ const EmployeeList = () => {
       ...prevState,
       [field]: !prevState[field],
     }));
+  };
+
+  // --- Integration for Add/Edit/Delete Employee (Backend) ---
+  const [form, setForm] = useState<Record<string, any>>({}); // For add/edit modal
+  const [selectedEmployee, setSelectedEmployee] = useState<any>(null); // For edit/delete
+  const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [successType, setSuccessType] = useState<'add' | 'edit' | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [showDeleteSuccess, setShowDeleteSuccess] = useState(false); // For delete success modal
+
+  // Helper to handle input changes
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value, type, files } = e.target as any;
+    
+    if (type === 'file' && files && files[0]) {
+      // Handle file upload with preview
+      const file = files[0];
+      
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file');
+        return;
+      }
+      
+      // Validate file size (4MB)
+      if (file.size > 4 * 1024 * 1024) {
+        alert('File size must be less than 4MB');
+        return;
+      }
+      
+      setForm(prev => ({ ...prev, [name]: file }));
+      
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setForm(prev => ({
+        ...prev,
+        [name]: type === 'file' ? files[0] : value
+      }));
+    }
+  };
+
+  // Helper to refresh dashboard stats
+  const refreshDashboardStats = async () => {
+    try {
+      const res = await axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/employees/stats/dashboard`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      setDashboardStats(res.data);
+    } catch (err) {
+      console.error('Error refreshing dashboard stats:', err);
+    }
+  };
+
+  // Helper to clear form and preview
+  const clearForm = () => {
+    setForm({});
+    setImagePreview(null);
+    setSelectedEmployee(null);
+  };
+
+  // Add Employee
+  const handleAddEmployee = async () => {
+    setLoading(true);
+    // Required fields check
+    const requiredFields = [
+      'firstName', 'lastName', 'employeeId', 'joiningDate', 'username', 'email', 'password', 'phoneNumber', 'company', 'department', 'designation'
+    ];
+    for (const field of requiredFields) {
+      if (!form[field]) {
+        alert(`Please fill the required field: ${field}`);
+        setLoading(false);
+        return;
+      }
+    }
+    try {
+      await addEmployeeRequest(form);
+      setSuccessType('add');
+      setShowSuccess(true);
+      // Do not clear form or refresh list yet
+    } catch (err: any) {
+      console.error('Error adding employee:', err);
+      const errorMessage =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        (typeof err === 'string' ? err : 'Failed to add employee');
+      alert(errorMessage);
+    }
+    setLoading(false);
+  };
+
+  // Edit Employee
+  const handleEditEmployee = async () => {
+    setLoading(true);
+    // Required fields check
+    const requiredFields = [
+      'firstName', 'lastName', 'employeeId', 'joiningDate', 'username', 'email', 'phoneNumber', 'company', 'department', 'designation'
+    ];
+    for (const field of requiredFields) {
+      if (!form[field]) {
+        alert(`Please fill the required field: ${field}`);
+        setLoading(false);
+        return;
+      }
+    }
+    if (!selectedEmployee) return;
+    try {
+      await editEmployeeRequest(selectedEmployee._id, form);
+      setSuccessType('edit');
+      setShowSuccess(true);
+      // Do not clear form or refresh list yet
+    } catch (err: any) {
+      console.error('Error editing employee:', err);
+      const errorMessage =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        (typeof err === 'string' ? err : 'Failed to edit employee');
+      alert(errorMessage);
+    }
+    setLoading(false);
+  };
+
+  // Delete Employee
+  const handleDeleteEmployee = async (id: string) => {
+    setLoading(true);
+    try {
+      await deleteEmployeeRequest(id);
+      // Refresh list and stats
+      axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/employees`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      }).then((res: any) => setData(mapEmployeeData(res.data)));
+      await refreshDashboardStats();
+      setShowDeleteSuccess(true); // Show delete success modal
+      setTimeout(() => setShowDeleteSuccess(false), 2000); // Auto-close after 2s
+    } catch (err: any) {
+      console.error('Error deleting employee:', err);
+      const errorMessage = err.response?.data?.message || 'Failed to delete employee';
+      alert(errorMessage);
+    }
+    setLoading(false);
+  };
+
+  // Backend request helpers (use previous logic)
+  const addEmployeeRequest = async (formData: Record<string, any>) => {
+    const data = new FormData();
+    Object.entries(formData).forEach(([key, value]) => {
+      if (typeof value === 'string' || value instanceof Blob) {
+        data.append(key, value as string | Blob);
+      } else if (value !== undefined && value !== null) {
+        data.append(key, String(value));
+      }
+    });
+    await axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/employees`, data, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  };
+  const editEmployeeRequest = async (id: string, formData: Record<string, any>) => {
+    const data = new FormData();
+    Object.entries(formData).forEach(([key, value]) => {
+      if (typeof value === 'string' || value instanceof Blob) {
+        data.append(key, value as string | Blob);
+      } else if (value !== undefined && value !== null) {
+        data.append(key, String(value));
+      }
+    });
+    await axios.put(`${process.env.REACT_APP_BACKEND_URL}/api/employees/${id}`, data, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  };
+  const deleteEmployeeRequest = async (id: string) => {
+    await axios.delete(`${process.env.REACT_APP_BACKEND_URL}/api/employees/${id}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+  };
+
+  // Add handlers for department and designation select changes
+  const handleDepartmentChange = (option: { value: string; label: string } | null) => {
+    setForm(prev => ({ ...prev, department: option ? option.value : '' }));
+  };
+  const handleDesignationChange = (option: { value: string; label: string } | null) => {
+    setForm(prev => ({ ...prev, designation: option ? option.value : '' }));
+  };
+
+  // Handler for closing the success modal
+  const handleSuccessModalClose = () => {
+    setShowSuccess(false);
+    setSuccessType(null);
+    clearForm();
+    // Refresh list and stats
+    axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/employees`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    }).then((res: any) => setData(mapEmployeeData(res.data)));
+    refreshDashboardStats();
   };
 
   return (
@@ -263,13 +554,13 @@ const EmployeeList = () => {
                       <p className="fs-12 fw-medium mb-1 text-truncate">
                         Total Employee
                       </p>
-                      <h4>1007</h4>
+                      <h4>{dashboardStats.totalEmployees}</h4>
                     </div>
                   </div>
                   <div>
                     <span className="badge badge-soft-purple badge-sm fw-normal">
                       <i className="ti ti-arrow-wave-right-down" />
-                      +19.01%
+                      {dashboardStats.totalChange}
                     </span>
                   </div>
                 </div>
@@ -288,13 +579,13 @@ const EmployeeList = () => {
                     </div>
                     <div className="ms-2 overflow-hidden">
                       <p className="fs-12 fw-medium mb-1 text-truncate">Active</p>
-                      <h4>1007</h4>
+                      <h4>{dashboardStats.activeEmployees}</h4>
                     </div>
                   </div>
                   <div>
                     <span className="badge badge-soft-primary badge-sm fw-normal">
                       <i className="ti ti-arrow-wave-right-down" />
-                      +19.01%
+                      {dashboardStats.activeChange}
                     </span>
                   </div>
                 </div>
@@ -313,13 +604,13 @@ const EmployeeList = () => {
                     </div>
                     <div className="ms-2 overflow-hidden">
                       <p className="fs-12 fw-medium mb-1 text-truncate">InActive</p>
-                      <h4>1007</h4>
+                      <h4>{dashboardStats.inactiveEmployees}</h4>
                     </div>
                   </div>
                   <div>
                     <span className="badge badge-soft-dark badge-sm fw-normal">
                       <i className="ti ti-arrow-wave-right-down" />
-                      +19.01%
+                      {dashboardStats.inactiveChange}
                     </span>
                   </div>
                 </div>
@@ -340,13 +631,13 @@ const EmployeeList = () => {
                       <p className="fs-12 fw-medium mb-1 text-truncate">
                         New Joiners
                       </p>
-                      <h4>67</h4>
+                      <h4>{dashboardStats.newJoiners}</h4>
                     </div>
                   </div>
                   <div>
                     <span className="badge badge-soft-secondary badge-sm fw-normal">
                       <i className="ti ti-arrow-wave-right-down" />
-                      +19.01%
+                      {dashboardStats.newJoinersChange}
                     </span>
                   </div>
                 </div>
@@ -450,7 +741,7 @@ const EmployeeList = () => {
               </div>
             </div>
             <div className="card-body p-0">
-              <Table dataSource={data} columns={columns} Selection={true} />
+              <Table dataSource={data} columns={columns} Selection={true} rowKey="key" />
             </div>
           </div>
         </div>
@@ -527,7 +818,16 @@ const EmployeeList = () => {
                       <div className="col-md-12">
                         <div className="d-flex align-items-center flex-wrap row-gap-3 bg-light w-100 rounded p-3 mb-4">
                           <div className="d-flex align-items-center justify-content-center avatar avatar-xxl rounded-circle border border-dashed me-2 flex-shrink-0 text-dark frames">
-                            <i className="ti ti-photo text-gray-2 fs-16" />
+                            {imagePreview ? (
+                              <img 
+                                src={imagePreview} 
+                                alt="Preview" 
+                                className="rounded-circle"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <i className="ti ti-photo text-gray-2 fs-16" />
+                            )}
                           </div>
                           <div className="profile-upload">
                             <div className="mb-2">
@@ -539,8 +839,10 @@ const EmployeeList = () => {
                                 Upload
                                 <input
                                   type="file"
+                                  name="profileImage"
                                   className="form-control image-sign"
-                                  multiple
+                                  accept="image/*"
+                                  onChange={handleInputChange}
                                 />
                               </div>
                               <Link
@@ -558,13 +860,13 @@ const EmployeeList = () => {
                           <label className="form-label">
                             First Name <span className="text-danger"> *</span>
                           </label>
-                          <input type="text" className="form-control" />
+                          <input type="text" name="firstName" className="form-control" onChange={handleInputChange} />
                         </div>
                       </div>
                       <div className="col-md-6">
                         <div className="mb-3">
                           <label className="form-label">Last Name</label>
-                          <input type="email" className="form-control" />
+                          <input type="email" name="lastName" className="form-control" onChange={handleInputChange} />
                         </div>
                       </div>
                       <div className="col-md-6">
@@ -572,7 +874,7 @@ const EmployeeList = () => {
                           <label className="form-label">
                             Employee ID <span className="text-danger"> *</span>
                           </label>
-                          <input type="text" className="form-control" />
+                          <input type="text" name="employeeId" className="form-control" onChange={handleInputChange} />
                         </div>
                       </div>
                       <div className="col-md-6">
@@ -589,6 +891,7 @@ const EmployeeList = () => {
                               }}
                               getPopupContainer={getModalContainer}
                               placeholder="DD-MM-YYYY"
+                              onChange={(date, dateString) => setForm(prev => ({ ...prev, joiningDate: dateString }))}
                             />
                             <span className="input-icon-addon">
                               <i className="ti ti-calendar text-gray-7" />
@@ -601,7 +904,7 @@ const EmployeeList = () => {
                           <label className="form-label">
                             Username <span className="text-danger"> *</span>
                           </label>
-                          <input type="text" className="form-control" />
+                          <input type="text" name="username" className="form-control" onChange={handleInputChange} />
                         </div>
                       </div>
                       <div className="col-md-6">
@@ -609,7 +912,7 @@ const EmployeeList = () => {
                           <label className="form-label">
                             Email <span className="text-danger"> *</span>
                           </label>
-                          <input type="email" className="form-control" />
+                          <input type="email" name="email" className="form-control" onChange={handleInputChange} />
                         </div>
                       </div>
                       <div className="col-md-6">
@@ -625,6 +928,8 @@ const EmployeeList = () => {
                                   : "password"
                               }
                               className="pass-input form-control"
+                              name="password"
+                              onChange={handleInputChange}
                             />
                             <span
                               className={`ti toggle-passwords ${passwordVisibility.password
@@ -651,6 +956,8 @@ const EmployeeList = () => {
                                   : "password"
                               }
                               className="pass-input form-control"
+                              name="confirmPassword"
+                              onChange={handleInputChange}
                             />
                             <span
                               className={`ti toggle-passwords ${passwordVisibility.confirmPassword
@@ -669,7 +976,7 @@ const EmployeeList = () => {
                           <label className="form-label">
                             Phone Number <span className="text-danger"> *</span>
                           </label>
-                          <input type="text" className="form-control" />
+                          <input type="text" name="phoneNumber" className="form-control" onChange={handleInputChange} />
                         </div>
                       </div>
                       <div className="col-md-6">
@@ -677,7 +984,7 @@ const EmployeeList = () => {
                           <label className="form-label">
                             Company<span className="text-danger"> *</span>
                           </label>
-                          <input type="text" className="form-control" />
+                          <input type="text" name="company" className="form-control" onChange={handleInputChange} />
                         </div>
                       </div>
                       <div className="col-md-6">
@@ -687,6 +994,7 @@ const EmployeeList = () => {
                             className='select'
                             options={department}
                             defaultValue={department[0]}
+                            onChange={handleDepartmentChange}
                           />
                         </div>
                       </div>
@@ -697,7 +1005,22 @@ const EmployeeList = () => {
                             className='select'
                             options={designation}
                             defaultValue={designation[0]}
+                            onChange={handleDesignationChange}
                           />
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="mb-3">
+                          <label className="form-label">Status</label>
+                          <select 
+                            name="status" 
+                            className="form-control" 
+                            onChange={handleInputChange}
+                            defaultValue="Active"
+                          >
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                          </select>
                         </div>
                       </div>
                       <div className="col-md-12">
@@ -708,7 +1031,8 @@ const EmployeeList = () => {
                           <textarea
                             className="form-control"
                             rows={3}
-                            defaultValue={""}
+                            name="about"
+                            onChange={handleInputChange}
                           />
                         </div>
                       </div>
@@ -719,11 +1043,12 @@ const EmployeeList = () => {
                       type="button"
                       className="btn btn-outline-light border me-2"
                       data-bs-dismiss="modal"
+                      onClick={clearForm}
                     >
                       Cancel
                     </button>
-                    <button type="button" data-bs-dismiss="modal" className="btn btn-primary">
-                      Save{" "}
+                    <button type="button" className="btn btn-primary" onClick={handleAddEmployee} data-bs-dismiss="modal" disabled={loading}>
+                      {loading ? 'Saving...' : 'Save'}
                     </button>
                   </div>
                 </div>
@@ -773,7 +1098,6 @@ const EmployeeList = () => {
                                     className="form-check-input me-2"
                                     type="checkbox"
                                     role="switch"
-                                    defaultChecked
                                   />
                                   Holidays
                                 </label>
@@ -785,7 +1109,6 @@ const EmployeeList = () => {
                                   <input
                                     className="form-check-input"
                                     type="checkbox"
-                                    defaultChecked
                                   />
                                   Read
                                 </label>
@@ -819,7 +1142,6 @@ const EmployeeList = () => {
                                   <input
                                     className="form-check-input"
                                     type="checkbox"
-                                    defaultChecked
                                   />
                                   Delete
                                 </label>
@@ -1420,6 +1742,7 @@ const EmployeeList = () => {
                       type="button"
                       className="btn btn-outline-light border me-2"
                       data-bs-dismiss="modal"
+                      onClick={clearForm}
                     >
                       Cancel
                     </button>
@@ -1501,11 +1824,16 @@ const EmployeeList = () => {
                       <div className="col-md-12">
                         <div className="d-flex align-items-center flex-wrap row-gap-3 bg-light w-100 rounded p-3 mb-4">
                           <div className="d-flex align-items-center justify-content-center avatar avatar-xxl rounded-circle border border-dashed me-2 flex-shrink-0 text-dark frames">
-                            <ImageWithBasePath
-                              src="assets/img/users/user-13.jpg"
-                              alt="img"
-                              className="rounded-circle"
-                            />
+                            {imagePreview ? (
+                              <img 
+                                src={imagePreview} 
+                                alt="Preview" 
+                                className="rounded-circle"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <i className="ti ti-photo text-gray-2 fs-16" />
+                            )}
                           </div>
                           <div className="profile-upload">
                             <div className="mb-2">
@@ -1517,8 +1845,10 @@ const EmployeeList = () => {
                                 Upload
                                 <input
                                   type="file"
+                                  name="profileImage"
                                   className="form-control image-sign"
-                                  multiple
+                                  accept="image/*"
+                                  onChange={handleInputChange}
                                 />
                               </div>
                               <Link
@@ -1538,8 +1868,10 @@ const EmployeeList = () => {
                           </label>
                           <input
                             type="text"
+                            name="firstName"
                             className="form-control"
                             defaultValue="Anthony"
+                            onChange={handleInputChange}
                           />
                         </div>
                       </div>
@@ -1548,8 +1880,10 @@ const EmployeeList = () => {
                           <label className="form-label">Last Name</label>
                           <input
                             type="email"
+                            name="lastName"
                             className="form-control"
                             defaultValue="Lewis"
+                            onChange={handleInputChange}
                           />
                         </div>
                       </div>
@@ -1560,8 +1894,10 @@ const EmployeeList = () => {
                           </label>
                           <input
                             type="text"
+                            name="employeeId"
                             className="form-control"
                             defaultValue="Emp-001"
+                            onChange={handleInputChange}
                           />
                         </div>
                       </div>
@@ -1579,6 +1915,7 @@ const EmployeeList = () => {
                               }}
                               getPopupContainer={getModalContainer}
                               placeholder="DD-MM-YYYY"
+                              onChange={(date, dateString) => setForm(prev => ({ ...prev, joiningDate: dateString }))}
                             />
                             <span className="input-icon-addon">
                               <i className="ti ti-calendar text-gray-7" />
@@ -1593,8 +1930,10 @@ const EmployeeList = () => {
                           </label>
                           <input
                             type="text"
+                            name="username"
                             className="form-control"
                             defaultValue="Anthony"
+                            onChange={handleInputChange}
                           />
                         </div>
                       </div>
@@ -1605,8 +1944,10 @@ const EmployeeList = () => {
                           </label>
                           <input
                             type="email"
+                            name="email"
                             className="form-control"
                             defaultValue="anthony@example.com	"
+                            onChange={handleInputChange}
                           />
                         </div>
                       </div>
@@ -1623,6 +1964,8 @@ const EmployeeList = () => {
                                   : "password"
                               }
                               className="pass-input form-control"
+                              name="password"
+                              onChange={handleInputChange}
                             />
                             <span
                               className={`ti toggle-passwords ${passwordVisibility.password
@@ -1649,6 +1992,8 @@ const EmployeeList = () => {
                                   : "password"
                               }
                               className="pass-input form-control"
+                              name="confirmPassword"
+                              onChange={handleInputChange}
                             />
                             <span
                               className={`ti toggle-passwords ${passwordVisibility.confirmPassword
@@ -1667,11 +2012,7 @@ const EmployeeList = () => {
                           <label className="form-label">
                             Phone Number <span className="text-danger"> *</span>
                           </label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            defaultValue="(123) 4567 890"
-                          />
+                          <input type="text" name="phoneNumber" className="form-control" onChange={handleInputChange} />
                         </div>
                       </div>
                       <div className="col-md-6">
@@ -1679,11 +2020,7 @@ const EmployeeList = () => {
                           <label className="form-label">
                             Company<span className="text-danger"> *</span>
                           </label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            defaultValue="Abac Company"
-                          />
+                          <input type="text" name="company" className="form-control" onChange={handleInputChange} />
                         </div>
                       </div>
                       <div className="col-md-6">
@@ -1693,6 +2030,7 @@ const EmployeeList = () => {
                             className='select'
                             options={department}
                             defaultValue={department[1]}
+                            onChange={handleDepartmentChange}
                           />
                         </div>
                       </div>
@@ -1703,7 +2041,22 @@ const EmployeeList = () => {
                             className='select'
                             options={designation}
                             defaultValue={designation[1]}
+                            onChange={handleDesignationChange}
                           />
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="mb-3">
+                          <label className="form-label">Status</label>
+                          <select 
+                            name="status" 
+                            className="form-control" 
+                            onChange={handleInputChange}
+                            defaultValue="Active"
+                          >
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                          </select>
                         </div>
                       </div>
                       <div className="col-md-12">
@@ -1714,7 +2067,8 @@ const EmployeeList = () => {
                           <textarea
                             className="form-control"
                             rows={3}
-                            defaultValue={""}
+                            name="about"
+                            onChange={handleInputChange}
                           />
                         </div>
                       </div>
@@ -1725,11 +2079,12 @@ const EmployeeList = () => {
                       type="button"
                       className="btn btn-outline-light border me-2"
                       data-bs-dismiss="modal"
+                      onClick={clearForm}
                     >
                       Cancel
                     </button>
-                    <button type="button" data-bs-dismiss="modal" className="btn btn-primary">
-                      Save{" "}
+                    <button type="button" className="btn btn-primary" onClick={handleEditEmployee} data-bs-dismiss="modal" disabled={loading}>
+                      {loading ? 'Saving...' : 'Save'}
                     </button>
                   </div>
                 </div>
@@ -1779,7 +2134,6 @@ const EmployeeList = () => {
                                     className="form-check-input me-2"
                                     type="checkbox"
                                     role="switch"
-                                    defaultChecked
                                   />
                                   Holidays
                                 </label>
@@ -1791,7 +2145,6 @@ const EmployeeList = () => {
                                   <input
                                     className="form-check-input"
                                     type="checkbox"
-                                    defaultChecked
                                   />
                                   Read
                                 </label>
@@ -1825,7 +2178,6 @@ const EmployeeList = () => {
                                   <input
                                     className="form-check-input"
                                     type="checkbox"
-                                    defaultChecked
                                   />
                                   Delete
                                 </label>
@@ -2426,6 +2778,7 @@ const EmployeeList = () => {
                       type="button"
                       className="btn btn-outline-light border me-2"
                       data-bs-dismiss="modal"
+                      onClick={clearForm}
                     >
                       Cancel
                     </button>
@@ -2446,7 +2799,7 @@ const EmployeeList = () => {
       </div>
       {/* /Edit Employee */}
       {/* Add Employee Success */}
-      <div className="modal fade" id="success_modal" role="dialog">
+      <div className={`modal fade${showSuccess ? ' show d-block' : ''}`} id="success_modal" role="dialog" style={{ display: showSuccess ? 'block' : 'none', background: showSuccess ? 'rgba(0,0,0,0.5)' : 'none' }}>
         <div className="modal-dialog modal-dialog-centered modal-sm">
           <div className="modal-content">
             <div className="modal-body">
@@ -2454,25 +2807,25 @@ const EmployeeList = () => {
                 <span className="avatar avatar-lg avatar-rounded bg-success mb-3">
                   <i className="ti ti-check fs-24" />
                 </span>
-                <h5 className="mb-2">Employee Added Successfully</h5>
+                <h5 className="mb-2">
+                  {successType === 'add' ? 'Employee Added Successfully' : 'Employee Updated Successfully'}
+                </h5>
                 <p className="mb-3">
-                  Stephan Peralt has been added with Client ID :{" "}
-                  <span className="text-primary">#EMP - 0001</span>
+                  {successType === 'add'
+                    ? 'The employee has been added.'
+                    : 'The employee has been updated.'}
                 </p>
                 <div>
                   <div className="row g-2">
                     <div className="col-6">
-                      <Link to={all_routes.employeeList} className="btn btn-dark w-100">
+                      <button className="btn btn-dark w-100" onClick={handleSuccessModalClose} data-bs-dismiss="modal">
                         Back to List
-                      </Link>
+                      </button>
                     </div>
                     <div className="col-6">
-                      <Link
-                        to={all_routes.employeedetails}
-                        className="btn btn-primary w-100"
-                      >
+                      <button className="btn btn-primary w-100" onClick={handleSuccessModalClose} data-bs-dismiss="modal">
                         Detail Page
-                      </Link>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2481,7 +2834,60 @@ const EmployeeList = () => {
           </div>
         </div>
       </div>
-      {/* /Add Client Success */}
+      {/* /Add/Edit Employee Success */}
+
+      {/* Delete Employee Modal */}
+      <div className="modal fade" id="delete_modal" tabIndex={-1} aria-hidden="true">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header border-0 justify-content-center">
+              <span className="avatar avatar-lg avatar-rounded bg-warning mb-3">
+                <i className="ti ti-alert-triangle fs-24 text-white" />
+              </span>
+            </div>
+            <div className="modal-body text-center">
+              <h5 className="mb-2">Delete Employee</h5>
+              <p className="mb-3">Are you sure you want to delete this employee? This action cannot be undone.</p>
+            </div>
+            <div className="modal-footer justify-content-center border-0 pb-4">
+              <button type="button" className="btn btn-outline-secondary me-2 px-4" data-bs-dismiss="modal">
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger px-4"
+                data-bs-dismiss="modal"
+                onClick={() => selectedEmployee && handleDeleteEmployee(selectedEmployee.key)}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* /Delete Employee Modal */}
+      {/* Delete Success Modal */}
+      {showDeleteSuccess && (
+        <div className="modal fade show d-block" id="delete_success_modal" role="dialog" style={{ display: 'block', background: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered modal-sm">
+            <div className="modal-content">
+              <div className="modal-body">
+                <div className="text-center p-3">
+                  <span className="avatar avatar-lg avatar-rounded bg-success mb-3">
+                    <i className="ti ti-check fs-24" />
+                  </span>
+                  <h5 className="mb-2">Employee Deleted Successfully</h5>
+                  <p className="mb-3">The employee has been deleted.</p>
+                  <button className="btn btn-dark w-100" onClick={() => setShowDeleteSuccess(false)} data-bs-dismiss="modal">
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* /Delete Success Modal */}
     </>
 
   )
